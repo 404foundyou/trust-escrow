@@ -1,0 +1,25 @@
+# Node / Hardhat
+node_modules/
+contracts/cache/
+contracts/artifacts/
+contracts/typechain-types/
+*.log
+
+# Env files - NEVER commit secrets
+.env
+.env.local
+**/.env
+
+# Python / FastAPI
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Frontend build
+frontend/dist/
+frontend/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
