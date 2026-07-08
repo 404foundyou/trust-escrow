@@ -8,13 +8,12 @@ async function main() {
   const balance = await hre.ethers.provider.getBalance(deployer.address);
   console.log("Account balance:", hre.ethers.formatEther(balance), "ETH");
 
-  // For now, deploying with the same address as client, freelancer, and arbiter
-  // (all three roles = deployer) just to verify the deployment pipeline works.
-  // We'll deploy a more realistic version with separate addresses once
-  // we build the EscrowFactory in a later phase.
+  // client = deployer (Account 1, funded and signing this transaction)
+  // freelancer and arbiter = separate MetaMask accounts, distinct addresses
+  // required by the contract, no funding needed since they don't sign anything here
   const client = deployer.address;
-  const freelancer = deployer.address;
-  const arbiter = deployer.address;
+  const freelancer = "0x2ABa1dF50033c1e873f50B4cC75f58A64f57708d";
+  const arbiter = "0xD61a66Beae035A283E6bEeBD51D5Eb226A4bd91D";
 
   const Escrow = await hre.ethers.getContractFactory("Escrow");
   const escrow = await Escrow.deploy(client, freelancer, arbiter);
