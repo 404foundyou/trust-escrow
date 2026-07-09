@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from app.database import client
+from app.routes import jobs
 
 app = FastAPI(title="TrustEscrow API")
+app.include_router(jobs.router)
 
 
 @app.get("/")
