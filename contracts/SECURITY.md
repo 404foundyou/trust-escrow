@@ -22,6 +22,18 @@
 | `solc-version` — version range issues | Informational | Fixed for our contract by pinning to `0.8.28` (no caret). Still applies to OpenZeppelin's own files, out of our control. |
 | `low-level-calls` — `.call{value: payout}()` in `withdraw()` | Low | Accepted by design. `.call()` was chosen deliberately over `.transfer()`/`.send()`, which hardcode a 2300 gas stipend that breaks compatibility with smart-contract wallets (a known anti-pattern). Risk is mitigated by checks-effects-interactions ordering and `nonReentrant`. |
 
+
+
+
+## EscrowFactory.sol
+Added in Phase 8 to support multiple concurrent jobs, each deployed as an isolated `Escrow` instance.
+
+- **7 tests**, 100% statement/branch/function/line coverage
+- **Slither**: 0 new findings introduced. The factory does not duplicate `Escrow`'s validation — instead, invalid parameters (e.g., matching client/freelancer addresses) revert naturally because `Escrow`'s own constructor guards are inherited automatically when the factory deploys a new instance. This avoids validation logic drifting out of sync between the two contracts.
+
+
+
+
 **Result: 0 unresolved vulnerabilities.** All findings were either dependency-only, informational and negligible given context, or a deliberate, mitigated design choice.
 
 ## Gas Report Summary
