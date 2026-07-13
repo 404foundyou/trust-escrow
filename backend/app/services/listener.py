@@ -1,14 +1,17 @@
 import json
 import asyncio
 from web3 import Web3
-from app.config import SEPOLIA_RPC_URL, CONTRACT_ADDRESS
+from app.config import SEPOLIA_RPC_URL, FACTORY_ADDRESS
 from app.database import jobs_collection, events_collection
 
 with open("app/contracts/EscrowABI.json") as f:
-    CONTRACT_ABI = json.load(f)
+    ESCROW_ABI = json.load(f)
+
+with open("app/contracts/EscrowFactoryABI.json") as f:
+    FACTORY_ABI = json.load(f)
 
 w3 = Web3(Web3.HTTPProvider(SEPOLIA_RPC_URL))
-contract = w3.eth.contract(address=Web3.to_checksum_address(CONTRACT_ADDRESS), abi=CONTRACT_ABI)
+factory = w3.eth.contract(address=Web3.to_checksum_address(FACTORY_ADDRESS), abi=FACTORY_ABI)
 
 STATUS_MAP = {
     "JobFunded": 1,
@@ -19,46 +22,86 @@ STATUS_MAP = {
     "Refunded": 6,
 }
 
+# Tracks active event filters per job contract address, so we can watch
+# every job the factory has ever created, not just one hardcoded address.
+job_filters = {}
 
-async def log_event(event_name: str, event):
+
+async def log_event(contract_address: str, event_name: str, event):
     await events_collection.insert_one({
         "event": event_name,
-        "contract_address": CONTRACT_ADDRESS,
+        "contract_address": contract_address,
         "block_number": event["blockNumber"],
         "tx_hash": event["transactionHash"].hex(),
         "args": dict(event["args"]),
     })
-    print(f"[EVENT] {event_name} at block {event['blockNumber']}")
+    print(f"[EVENT] {event_name} at {contract_address} (block {event['blockNumber']})")
 
 
-async def upsert_job_status(event_name: str, event):
+async def upsert_job_status(contract_address: str, event_name: str):
     new_status = STATUS_MAP.get(event_name)
     if new_status is None:
         return
 
     await jobs_collection.update_one(
-        {"contract_address": CONTRACT_ADDRESS},
+        {"contract_address": contract_address},
         {"$set": {"status": new_status}},
-        upsert=True,
     )
 
 
-async def poll_events():
-    print("Starting event listener for contract:", CONTRACT_ADDRESS)
+async def handle_job_created(event):
+    job_address = event["args"]["jobAddress"]
+    client = event["args"]["client"]
+    freelancer = event["args"]["freelancer"]
+    arbiter = event["args"]["arbiter"]
 
-    event_filters = {
-        "JobFunded": contract.events.JobFunded.create_filter(from_block="latest"),
-        "Delivered": contract.events.Delivered.create_filter(from_block="latest"),
-        "Confirmed": contract.events.Confirmed.create_filter(from_block="latest"),
-        "Disputed": contract.events.Disputed.create_filter(from_block="latest"),
-        "Resolved": contract.events.Resolved.create_filter(from_block="latest"),
-        "Refunded": contract.events.Refunded.create_filter(from_block="latest"),
+    await log_event(FACTORY_ADDRESS, "JobCreated", event)
+
+    await jobs_collection.update_one(
+        {"contract_address": job_address},
+        {"$set": {
+            "contract_address": job_address,
+            "client": client,
+            "freelancer": freelancer,
+            "arbiter": arbiter,
+            "status": 0,  # Created
+        }},
+        upsert=True,
+    )
+
+    start_watching_job(job_address)
+    print(f"[NEW JOB] {job_address} (client={client}, freelancer={freelancer}, arbiter={arbiter})")
+
+
+def start_watching_job(job_address: str):
+    if job_address in job_filters:
+        return  # already watching this job
+
+    job_contract = w3.eth.contract(address=Web3.to_checksum_address(job_address), abi=ESCROW_ABI)
+
+    job_filters[job_address] = {
+        "JobFunded": job_contract.events.JobFunded.create_filter(from_block="latest"),
+        "Delivered": job_contract.events.Delivered.create_filter(from_block="latest"),
+        "Confirmed": job_contract.events.Confirmed.create_filter(from_block="latest"),
+        "Disputed": job_contract.events.Disputed.create_filter(from_block="latest"),
+        "Resolved": job_contract.events.Resolved.create_filter(from_block="latest"),
+        "Refunded": job_contract.events.Refunded.create_filter(from_block="latest"),
     }
 
+
+async def poll_events():
+    print("Starting event listener. Watching factory:", FACTORY_ADDRESS)
+
+    job_created_filter = factory.events.JobCreated.create_filter(from_block="latest")
+
     while True:
-        for event_name, event_filter in event_filters.items():
-            for event in event_filter.get_new_entries():
-                await log_event(event_name, event)
-                await upsert_job_status(event_name, event)
+        for event in job_created_filter.get_new_entries():
+            await handle_job_created(event)
+
+        for job_address, filters in job_filters.items():
+            for event_name, event_filter in filters.items():
+                for event in event_filter.get_new_entries():
+                    await log_event(job_address, event_name, event)
+                    await upsert_job_status(job_address, event_name)
 
         await asyncio.sleep(5)

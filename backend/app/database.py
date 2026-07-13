@@ -1,7 +1,8 @@
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.config import MONGO_URI
 
-client = AsyncIOMotorClient(MONGO_URI)
+client = AsyncIOMotorClient(MONGO_URI, tlsCAFile=certifi.where())
 db = client.get_default_database()
 
 jobs_collection = db["jobs"]
