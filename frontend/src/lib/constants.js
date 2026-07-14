@@ -1,0 +1,3 @@
+export const FACTORY_ADDRESS = "0xdD542e49128Cce25449CDB273F95794e1906de6F";
+export const SEPOLIA_CHAIN_ID = 11155111;
+export const BACKEND_API_URL = "http://127.0.0.1:8000";
