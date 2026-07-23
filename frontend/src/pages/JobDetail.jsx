@@ -2,6 +2,7 @@ import { useParams } from "react-router-dom";
 import { useWeb3 } from "../context/Web3Context";
 import { useJob } from "../hooks/useJob";
 import { formatEther } from "ethers";
+import JobActions from "../components/JobActions";
 
 const STATUS_LABELS = [
   "Created",
@@ -124,9 +125,7 @@ export default function JobDetail() {
       </div>
 
       {/* Action panel placeholder — Pass 2 */}
-      <div className="mt-8 text-center text-gray-500 text-sm">
-        Action buttons coming next (Pass 2).
-      </div>
+      <JobActions job={job} account={account} role={role} refetch={refetch} />
     </div>
   );
 }

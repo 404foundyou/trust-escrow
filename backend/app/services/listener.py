@@ -38,14 +38,31 @@ async def log_event(contract_address: str, event_name: str, event):
     print(f"[EVENT] {event_name} at {contract_address} (block {event['blockNumber']})")
 
 
-async def upsert_job_status(contract_address: str, event_name: str):
+async def upsert_job_status(contract_address: str, event_name: str, event):
     new_status = STATUS_MAP.get(event_name)
     if new_status is None:
         return
 
+    update_fields = {"status": new_status}
+
+    # JobFunded carries the funded amount (in wei) — store as string to
+    # avoid JS/JSON precision loss on large values. The contract also sets
+    # deliveryDeadline = block.timestamp + DELIVERY_WINDOW at funding time,
+    # but that's not in the event args, so we read it directly from the
+    # contract's public state instead.
+    if event_name == "JobFunded":
+        amount_wei = event["args"].get("amount")
+        if amount_wei is not None:
+            update_fields["amount"] = str(amount_wei)
+
+        job_contract = w3.eth.contract(
+            address=Web3.to_checksum_address(contract_address), abi=ESCROW_ABI
+        )
+        update_fields["delivery_deadline"] = job_contract.functions.deliveryDeadline().call()
+
     await jobs_collection.update_one(
         {"contract_address": contract_address},
-        {"$set": {"status": new_status}},
+        {"$set": update_fields},
     )
 
 
@@ -102,6 +119,6 @@ async def poll_events():
             for event_name, event_filter in filters.items():
                 for event in event_filter.get_new_entries():
                     await log_event(job_address, event_name, event)
-                    await upsert_job_status(job_address, event_name)
+                    await upsert_job_status(job_address, event_name, event)
 
         await asyncio.sleep(5)
