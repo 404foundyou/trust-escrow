@@ -106,19 +106,33 @@ def start_watching_job(job_address: str):
     }
 
 
+async def resume_watching_existing_jobs():
+    """
+    On startup, re-discover every job already known to MongoDB and start
+    watching it for events. This makes the listener resilient to restarts/
+    crashes — without this, job_filters would only ever contain jobs
+    created after this process started, silently missing events for any
+    job created in a previous run.
+    """
+    count = 0
+    async for job in jobs_collection.find({}, {"contract_address": 1}):
+        job_address = job.get("contract_address")
+        if job_address:
+            start_watching_job(job_address)
+            count += 1
+    print(f"Resumed watching {count} existing job(s) from database.")
+
+
 async def poll_events():
     print("Starting event listener. Watching factory:", FACTORY_ADDRESS)
-
+    await resume_watching_existing_jobs()
     job_created_filter = factory.events.JobCreated.create_filter(from_block="latest")
-
     while True:
         for event in job_created_filter.get_new_entries():
             await handle_job_created(event)
-
         for job_address, filters in job_filters.items():
             for event_name, event_filter in filters.items():
                 for event in event_filter.get_new_entries():
                     await log_event(job_address, event_name, event)
                     await upsert_job_status(job_address, event_name, event)
-
         await asyncio.sleep(5)
